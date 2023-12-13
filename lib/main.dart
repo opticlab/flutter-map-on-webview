@@ -55,7 +55,7 @@ class TestPage extends StatelessWidget {
                   Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (context) {
-                        return WebViewFlutterPage();
+                        return const WebViewFlutterPage();
                       },
                     ),
                   );
@@ -211,6 +211,20 @@ class _FlutterInAppWebViewPageState extends State<FlutterInAppWebViewPage> {
       appBar: AppBar(
         title: const Text("flutter_inappwebview"),
         actions: [
+          IconButton(
+            onPressed: () {
+              _measure.clear();
+              final messenger = ScaffoldMessenger.of(context);
+              if (messenger.mounted) {
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text("Measurements cleared"),
+                  ),
+                );
+              }
+            },
+            icon: const Icon(Icons.delete),
+          ),
           IconButton(
             onPressed: _startTest,
             icon: const Icon(Icons.refresh),
