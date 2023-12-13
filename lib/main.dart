@@ -82,80 +82,166 @@ class TestPage extends StatelessWidget {
   }
 }
 
-class WebViewFlutterPage extends StatelessWidget {
-  final _controller = WebViewController();
+class WebViewFlutterPage extends StatefulWidget {
+  const WebViewFlutterPage({super.key});
 
-  WebViewFlutterPage({super.key}) {
-    _controller
-      ..clearLocalStorage()
+  @override
+  State<WebViewFlutterPage> createState() => _WebViewFlutterPageState();
+}
+
+class _WebViewFlutterPageState extends State<WebViewFlutterPage> {
+  late final WebViewController _controller;
+  var _isLoading = false;
+  var _started = -1;
+
+  final _measure = Measure<int>();
+
+  @override
+  void initState() {
+    super.initState();
+
+    _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted);
   }
 
   @override
   Widget build(BuildContext context) {
-    var started = 0;
+    _controller.setNavigationDelegate(
+      NavigationDelegate(
+        onPageStarted: (url) {
+          setState(() {
+            _isLoading = true;
+          });
 
-    _controller
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageStarted: (url) {
-            started = DateTime.now().millisecondsSinceEpoch;
-          },
-          onPageFinished: (url) {
-            final elapsed = DateTime.now().millisecondsSinceEpoch - started;
-            final message = "Elapsed: $elapsed";
-            final messenger = ScaffoldMessenger.of(context);
-            if (messenger.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(message),
-                ),
-              );
-            } else {
-              log(message);
-            }
-          },
-        ),
-      )
-      ..loadRequest(_kSamplePageUrl);
+          log(url);
+
+          final messenger = ScaffoldMessenger.of(context);
+          if (messenger.mounted) {
+            messenger.clearSnackBars();
+          }
+
+          _started = DateTime.now().millisecondsSinceEpoch;
+        },
+        onPageFinished: (url) {
+          setState(() {
+            _isLoading = false;
+          });
+
+          log(url);
+
+          if (_started == -1) return; // finished without starting
+
+          final elapsed = DateTime.now().millisecondsSinceEpoch - _started;
+          _measure.add(elapsed);
+
+          final message =
+              "Elapsed: $elapsed\nMedium: ${_measure.medium} (out of ${_measure.sampleSize})\nAverage: ${_measure.average}";
+          final messenger = ScaffoldMessenger.of(context);
+          if (messenger.mounted) {
+            messenger.showSnackBar(
+              SnackBar(
+                content: Text(message),
+                duration: const Duration(days: 1),
+                showCloseIcon: true,
+              ),
+            );
+          } else {
+            log(message);
+          }
+        },
+      ),
+    );
 
     return Scaffold(
       appBar: AppBar(
         title: const Text("webview_flutter"),
+        actions: [
+          IconButton(
+            onPressed: () {
+              _measure.clear();
+              final messenger = ScaffoldMessenger.of(context);
+              if (messenger.mounted) {
+                messenger.showSnackBar(
+                  const SnackBar(
+                    content: Text("Measurements cleared"),
+                  ),
+                );
+              }
+            },
+            icon: const Icon(Icons.delete),
+          ),
+          IconButton(
+            onPressed: _startTest,
+            icon: const Icon(Icons.refresh),
+          )
+        ],
       ),
       body: WebViewWidget(controller: _controller),
     );
   }
+
+  void _startTest() async {
+    _started = -1;
+
+    if (_isLoading) {
+      _controller.runJavaScript('window.stop();');
+    }
+    _controller.clearCache();
+    _controller.clearLocalStorage();
+    _controller.loadRequest(_kSamplePageUrl);
+  }
 }
 
-class FlutterInAppWebViewPage extends StatelessWidget {
+class FlutterInAppWebViewPage extends StatefulWidget {
   const FlutterInAppWebViewPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
-    var started = 0;
+  State<FlutterInAppWebViewPage> createState() =>
+      _FlutterInAppWebViewPageState();
+}
 
+class _FlutterInAppWebViewPageState extends State<FlutterInAppWebViewPage> {
+  late InAppWebViewController _controller;
+  final _measure = Measure<int>();
+  var _started = -1;
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: const Text("flutter_inappwebview"),
+        actions: [
+          IconButton(
+            onPressed: _startTest,
+            icon: const Icon(Icons.refresh),
+          )
+        ],
       ),
       body: InAppWebView(
-        onWebViewCreated: (controller) {
-          controller.webStorage.localStorage.clear();
-          controller.webStorage.sessionStorage.clear();
-          controller.loadUrl(urlRequest: URLRequest(url: _kSamplePageUrl));
-        },
+        onWebViewCreated: (controller) => _controller = controller,
         onLoadStart: (controller, url) {
-          started = DateTime.now().millisecondsSinceEpoch;
+          _started = DateTime.now().millisecondsSinceEpoch;
+
+          final messenger = ScaffoldMessenger.of(context);
+          if (messenger.mounted) {
+            messenger.clearSnackBars();
+          }
         },
         onLoadStop: (controller, url) {
-          final elapsed = DateTime.now().millisecondsSinceEpoch - started;
-          final message = "Elapsed: $elapsed";
+          if (_started == -1) return;
+
+          final elapsed = DateTime.now().millisecondsSinceEpoch - _started;
+          _measure.add(elapsed);
+
+          final message =
+              "Elapsed: $elapsed\nMedium: ${_measure.medium} (out of ${_measure.sampleSize})\nAverage: ${_measure.average}";
           final messenger = ScaffoldMessenger.of(context);
           if (messenger.mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(message),
+                duration: const Duration(days: 1),
+                showCloseIcon: true,
               ),
             );
           } else {
@@ -165,7 +251,43 @@ class FlutterInAppWebViewPage extends StatelessWidget {
       ),
     );
   }
+
+  void _startTest() async {
+    _started = -1;
+
+    if (await _controller.isLoading()) {
+      await _controller.stopLoading();
+    }
+    await _controller.clearCache();
+    await _controller.webStorage.localStorage.clear();
+    await _controller.loadUrl(urlRequest: URLRequest(url: _kSamplePageUrl));
+  }
 }
 
 final _kSamplePageUrl = Uri.parse(
     "https://developers.google.com/maps/documentation/javascript/examples/polyline-simple");
+
+class Measure<T extends num> {
+  final List<T> _measurements = List.empty(growable: true);
+
+  int get sampleSize => _measurements.length;
+
+  void add(T value) {
+    _measurements
+      ..add(value)
+      ..sort();
+  }
+
+  void clear() {
+    _measurements.clear();
+  }
+
+  double get average {
+    return _measurements.fold(0.0, (value, element) => value + element) /
+        _measurements.length;
+  }
+
+  T get medium {
+    return _measurements[(_measurements.length + 1) ~/ 2];
+  }
+}
